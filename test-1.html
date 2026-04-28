@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trắc Nghiệm AI - Nhận Diện Cử Chỉ Tay</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --primary: #4361ee;
+            --success: #2ecc71;
+            --danger: #e74c3c;
+            --warning: #f1c40f;
+            --bg: #f8f9fa;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: #333; }
+        
+        /* Container & Screens */
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+        .screen { display: none; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 800px; margin: 0 auto; }
+        .screen.active { display: block; animation: fadeIn 0.5s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Login Screen */
+        .login-box { text-align: center; }
+        .login-box h1 { margin-bottom: 20px; color: var(--primary); }
+        .login-box input { width: 100%; max-width: 300px; padding: 15px; margin: 10px 0; border: 2px solid #ddd; border-radius: 10px; font-size: 16px; outline: none; transition: 0.3s; }
+        .login-box input:focus { border-color: var(--primary); }
+        .btn { padding: 15px 30px; font-size: 18px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s; background: var(--primary); color: white; margin-top: 10px; }
+        .btn:hover { background: #3450d9; transform: translateY(-2px); }
+
+        /* Quiz Layout */
+        .quiz-layout { display: flex; gap: 20px; max-width: 1200px; margin: 0 auto; }
+        .quiz-content { flex: 2; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); }
+        .camera-content { flex: 1; background: white; padding: 20px; border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); text-align: center; display: flex; flex-direction: column; }
+        
+        .header-info { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 18px; font-weight: bold; color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .question-text { font-size: 22px; margin-bottom: 25px; line-height: 1.4; }
+        
+        .options { display: grid; grid-template-columns: 1fr; gap: 15px; }
+        .option { padding: 15px 20px; border: 2px solid #e0e0e0; border-radius: 12px; font-size: 18px; display: flex; align-items: center; transition: all 0.2s; background: white; }
+        .option .badge { width: 35px; height: 35px; background: var(--primary); color: white; display: flex; justify-content: center; align-items: center; border-radius: 50%; margin-right: 15px; font-weight: bold; }
+        .option.active { border-color: var(--warning); background-color: #fffdf0; transform: scale(1.02); }
+        .option.correct { border-color: var(--success); background-color: #ebfaf1; }
+        .option.wrong { border-color: var(--danger); background-color: #fceceb; }
+
+        canvas { width: 100%; border-radius: 12px; background: #000; transform: scaleX(-1); margin-bottom: 10px; border: 3px solid #eee; }
+        video { display: none; }
+        
+        #statusText { font-weight: bold; font-size: 18px; min-height: 27px; color: var(--primary); margin: 10px 0; }
+        .progress-bar-container { width: 100%; height: 8px; background: #eee; border-radius: 4px; overflow: hidden; }
+        #progressBar { width: 0%; height: 100%; background: var(--warning); transition: width 0.1s linear; }
+
+        /* Leaderboard */
+        .leaderboard-box { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 15px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: var(--primary); color: white; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .rank-1 { color: #f1c40f; font-weight: bold; font-size: 1.2em; }
+        .rank-2 { color: #95a5a6; font-weight: bold; font-size: 1.1em; }
+        .rank-3 { color: #cd7f32; font-weight: bold; font-size: 1.05em; }
+
+        .controls { margin-top: 30px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="loginScreen" class="screen active login-box">
+        <h1>👋 Chào mừng đến với Phòng thi AI</h1>
+        <p style="margin-bottom: 20px; color: #666;">Nhận diện đáp án bằng cử chỉ tay qua Camera</p>
+        <input type="text" id="studentName" placeholder="Nhập tên của bạn (VD: Nguyễn Văn A)" autocomplete="off">
+        <br>
+        <button class="btn" onclick="startQuiz()">Bắt đầu thi</button>
+        <div class="controls">
+            <button class="btn" style="background: #6c757d; font-size: 14px; padding: 10px 20px;" onclick="showLeaderboard()">Xem bảng xếp hạng</button>
+        </div>
+    </div>
+
+    <div id="quizScreen" class="quiz-layout" style="display: none;">
+        <div class="quiz-content">
+            <div class="header-info">
+                <div>Thí sinh: <span id="displayPlayer"></span></div>
+                <div>Điểm: <span id="displayScore">0</span>/<span id="totalQuestions"></span></div>
+                <div>Thời gian: <span id="displayTime">00:00</span></div>
+            </div>
+            <div class="question-text" id="questionText">Đang tải câu hỏi...</div>
+            <div class="options">
+                <div class="option" id="opt1"><div class="badge">A</div><span class="text"></span></div>
+                <div class="option" id="opt2"><div class="badge">B</div><span class="text"></span></div>
+                <div class="option" id="opt3"><div class="badge">C</div><span class="text"></span></div>
+                <div class="option" id="opt4"><div class="badge">D</div><span class="text"></span></div>
+            </div>
+        </div>
+
+        <div class="camera-content">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="output_canvas" width="400" height="300"></canvas>
+            <div id="statusText">Đang khởi động Camera...</div>
+            <div class="progress-bar-container">
+                <div id="progressBar"></div>
+            </div>
+            <div style="margin-top: 15px; font-size: 14px; color: #666; text-align: left; background: #f8f9fa; padding: 10px; border-radius: 8px;">
+                <strong>Hướng dẫn:</strong><br>
+                ☝️ Giơ 1 ngón: Chọn A<br>
+                ✌️ Giơ 2 ngón: Chọn B<br>
+                🤟 Giơ 3 ngón: Chọn C<br>
+                🖐️ Giơ 4 ngón: Chọn D<br>
+                <i>(Giữ yên tay khoảng 2 giây để chốt)</i>
+            </div>
+        </div>
+    </div>
+
+    <div id="leaderboardScreen" class="screen leaderboard-box">
+        <h1>🏆 Bảng Xếp Hạng Tổng Hợp</h1>
+        <table id="leaderboardTable">
+            <thead>
+                <tr>
+                    <th>Hạng</th>
+                    <th>Thí sinh</th>
+                    <th>Điểm số</th>
+                    <th>Thời gian</th>
+                </tr>
+            </thead>
+            <tbody>
+                </tbody>
+        </table>
+        <div class="controls">
+            <button class="btn" onclick="backToLogin()">Về trang chủ</button>
+            <button class="btn" style="background: #e74c3c;" onclick="clearLeaderboard()">Xóa lịch sử</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 1. DỮ LIỆU CÂU HỎI (Trích xuất từ file Đề cương) ---
+    const quizList = [
+        { q: "Câu 1. Khi khai báo hàm, thành phần nào được định nghĩa và được dùng như biến trong hàm?", a: "Tham số.", b: "Đối số.", c: "Dữ liệu.", d: "Giá trị.", ans: 1 },
+        { q: "Câu 2. Hàm trong Python được định nghĩa bằng từ khóa nào?", a: "return.", b: "function.", c: "def.", d: "global", ans: 3 },
+        { q: "Câu 3. Giá trị được truyền vào khi gọi hàm được gọi là:", a: "Tham số.", b: "Dữ liệu.", c: "Giá trị.", d: "Đối số.", ans: 4 },
+        { q: "Câu 4. Số lượng giá trị được truyền vào hàm và số tham số trong khai báo của hàm có mối liên hệ với nhau như thế nào:", a: "Số tham số phải nhiều hơn", b: "Số tham số phải ít hơn", c: "Bằng nhau", d: "Không phụ thuộc nhau", ans: 3 },
+        { q: "Câu 5. Khi gọi hàm f(1, 2, 3), khi định nghĩa hàm f có bao nhiêu tham số?", a: "1.", b: "2.", c: "3.", d: "4.", ans: 3 },
+        { q: "Câu 6. Khi gọi hàm f(1, 2), khi định nghĩa hàm f có bao nhiêu tham số?", a: "1.", b: "2.", c: "3.", d: "4.", ans: 2 },
+        { q: "Câu 7. Hàm f được khai báo như sau f(a, b, c). Số lượng đối số truyền vào là:", a: "3.", b: "2.", c: "1.", d: "4.", ans: 1 },
+        { q: "Câu 8. Hàm f được khai báo như sau s(a, b). Số lượng đối số truyền vào là:", a: "3.", b: "2.", c: "1.", d: "4.", ans: 2 },
+        { q: "Câu 9. Chương trình sau có lỗi ở dòng nào?\n1 m,n=10,5\n2 def f(a)\n3 k=m+n+a\n4 return k\n5 print(f(5))", a: "dòng 2", b: "dòng 3", c: "dòng 4", d: "dòng 5", ans: 1 },
+        { q: "Câu 10. Trong Python biến được khai báo và sử dụng bên trong một hàm được gọi là biến gì?", a: "Biến cơ bản", b: "Biến toàn cục", c: "Biến riêng", d: "Biến cục bộ", ans: 4 },
+        { q: "Câu 11. Nếu muốn biến bên ngoài vẫn có tác dụng bên trong hàm thì cần khai báo lại biến này bên trong hàm với từ khoá nào", a: "global.", b: "def.", c: "Không thể thực hiện", d: "all.", ans: 1 },
+        { q: "Câu 12. Có thể phân biệt lỗi chương trình Python làm mấy loại?", a: "1.", b: "2.", c: "3.", d: "4.", ans: 2 },
+        { q: "Câu 13. Khi có lệnh viết sai cú pháp hoặc sai cấu trúc ngôn ngữ Python quy định, chương trình đưa ra lỗi:", a: "ZeroDivisionError.", b: "TypeError.", c: "IndentationError.", d: "SyntaxError.", ans: 4 },
+        { q: "Câu 14. Mã lỗi nào được đưa ra khi lệnh gọi một hàm nhưng không có hàm đó", a: "ZeroDivisionError.", b: "TypeError.", c: "IndentationError.", d: "NameError.", ans: 4 },
+        { q: "Câu 15. Mã lỗi nào được đưa ra khi lệnh thực hiện phép chia cho giá trị 0", a: "ZeroDivisionError.", b: "TypeError.", c: "IndentationError.", d: "SyntaxError.", ans: 1 },
+        { q: "Câu 16. Khi dòng lệnh thụt vào không thẳng hàng chương trình đưa ra mã lỗi ngoại lệ nào?", a: "ZeroDivisionError.", b: "TypeError.", c: "IndentationError.", d: "SyntaxError.", ans: 3 },
+        { q: "Câu 17. Chương trình chạy phát sinh lỗi ngoại lệ ZeroDivision, nên xử lí như thế nào?", a: "Kiểm tra lại giá trị số chia.", b: "Kiểm tra lại chỉ số trong mảng.", c: "Kiểm tra giá trị của số bị chia.", d: "Kiểm tra kiểu dữ liệu nhập vào.", ans: 1 },
+        { q: "Câu 18. Chương trình chạy phát sinh lỗi ngoại lệ TypeError, nên xử lí như thế nào?", a: "Kiểm tra lại chỉ số trong mảng.", b: "Kiểm tra lại giá trị số chia.", c: "Kiểm tra giá trị của số bị chia.", d: "Kiểm tra kiểu dữ liệu nhập vào.", ans: 4 },
+        { q: "Câu 19. Công việc nào có liên quan trực tiếp đến nghề thiết kế đồ họa?", a: "Thợ may.", b: "Giáo viên", c: "Kiến trúc sư.", d: "Bác sĩ.", ans: 3 },
+        { q: "Câu 20. Đâu không là phần mềm mà người thiết kế đồ hoạ sử dụng?", a: "Word.", b: "Inkscape.", c: "Adobe Photoshop.", d: "Paint.", ans: 1 },
+        { q: "Câu 21. Ngành thiết kế đồ họa cần có kĩ năng gì?", a: "Vẽ, sắp xếp đối tượng.", b: "Sử dụng máy tính.", c: "Làm việc trên phần mềm đồ họa.", d: "Cả 3 phương án trên.", ans: 4 },
+        { q: "Câu 22. Kĩ năng, tố chất nào cần thiết nhất cho người thiết kế đồ họa?", a: "Hiểu biết toán học.", b: "Thành thạo phần mềm & công nghệ.", c: "Biết chơi nhạc cụ.", d: "Có khả năng nhìn nhận cái đẹp.", ans: 4 },
+        { q: "Câu 23. Tiếp xúc khách hàng, xây dựng hồ sơ yêu cầu là công đoạn nào?", a: "Lập trình.", b: "Kiểm thử.", c: "Chuyển giao.", d: "Điều tra khảo sát.", ans: 4 },
+        { q: "Câu 24. Cài đặt, khởi tạo dữ liệu, hướng dẫn sử dụng là công đoạn nào?", a: "Lập trình.", b: "Điều tra khảo sát.", c: "Kiểm thử.", d: "Chuyển giao.", ans: 4 },
+        { q: "Câu 25. Tố chất cần thiết đối với lập trình viên là?", a: "Hiểu thuật toán.", b: "Kiến thức KHMT.", c: "Cẩn thận, tỉ mỉ.", d: "Cả 3 ý trên.", ans: 4 },
+        { q: "Câu 26. Công việc của kĩ sư phần mềm gồm có:", a: "Phân tích, thiết kế.", b: "Kiểm định, bảo trì.", c: "Định hướng phát triển.", d: "Tất cả những điều trên.", ans: 4 },
+        { q: "Câu 27. Lệnh nào sau đây xoá toàn bộ danh sách?", a: "clear().", b: "exit().", c: "remove().", d: "del().", ans: 1 },
+        { q: "Câu 28. Phát biểu nào sau đây là sai?", a: "clear() làm rỗng danh sách.", b: "remove() xoá 1 phần tử cho trước.", c: "remove() xoá tất cả phần tử cho trước.", d: "clear() xoá toàn bộ danh sách.", ans: 3 },
+        { q: "Câu 29. Số phát biểu đúng là: (A) clear() trả về 0. (B) remove trả False nếu không có. (C) remove() xoá 1 phần tử cho trước. (D) remove() xoá ở vị trí cho trước.", a: "1.", b: "2.", c: "0.", d: "3.", ans: 1 },
+        { q: "Câu 30. Trong Python, câu lệnh nào dùng để tính độ dài của xâu s?", a: "len(s).", b: "length(s).", c: "s.len().", d: "s. length().", ans: 1 }
+    ];
+
+    document.getElementById('totalQuestions').innerText = quizList.length;
+
+    // --- 2. TRẠNG THÁI HỆ THỐNG ---
+    let currentPlayer = "";
+    let currentQIndex = 0;
+    let score = 0;
+    let startTime, timerInterval;
+    let timeElapsed = 0;
+    let isTransitioning = false; // Ngăn chặn nhận diện khi đang chuyển câu
+
+    // MediaPipe Variables
+    let currentFingerCount = 0;
+    let confirmTimer = 0;
+    const CONFIRM_THRESHOLD = 30; // ~1.5s - 2s giữ tay
+    let cameraStarted = false;
+
+    // --- 3. ĐIỀU HƯỚNG GIAO DIỆN ---
+    function switchScreen(hideId, showId) {
+        document.getElementById(hideId).style.display = 'none';
+        document.getElementById(hideId).classList.remove('active');
+        document.getElementById(showId).style.display = (showId === 'quizScreen') ? 'flex' : 'block';
+        setTimeout(() => document.getElementById(showId).classList.add('active'), 10);
+    }
+
+    function startQuiz() {
+        const nameInput = document.getElementById('studentName').value.trim();
+        if (!nameInput) { alert("Vui lòng nhập tên của bạn trước khi bắt đầu!"); return; }
+        
+        currentPlayer = nameInput;
+        document.getElementById('displayPlayer').innerText = currentPlayer;
+        
+        // Reset trạng thái
+        currentQIndex = 0;
+        score = 0;
+        timeElapsed = 0;
+        document.getElementById('displayScore').innerText = score;
+        
+        switchScreen('loginScreen', 'quizScreen');
+        loadQuestion();
+        
+        // Bắt đầu đếm giờ
+        startTime = Date.now();
+        timerInterval = setInterval(updateTime, 1000);
+
+        if (!cameraStarted) initCamera();
+    }
+
+    function updateTime() {
+        timeElapsed = Math.floor((Date.now() - startTime) / 1000);
+        let m = String(Math.floor(timeElapsed / 60)).padStart(2, '0');
+        let s = String(timeElapsed % 60).padStart(2, '0');
+        document.getElementById('displayTime').innerText = `${m}:${s}`;
+    }
+
+    // --- 4. LOGIC TRẮC NGHIỆM ---
+    function loadQuestion() {
+        isTransitioning = false;
+        confirmTimer = 0;
+        document.getElementById('progressBar').style.width = "0%";
+        document.getElementById('statusText').innerText = "Giơ tay để chọn đáp án";
+        document.getElementById('statusText').style.color = "var(--primary)";
+
+        const qData = quizList[currentQIndex];
+        document.getElementById('questionText').innerText = qData.q;
+        document.getElementById('opt1').querySelector('.text').innerText = qData.a;
+        document.getElementById('opt2').querySelector('.text').innerText = qData.b;
+        document.getElementById('opt3').querySelector('.text').innerText = qData.c;
+        document.getElementById('opt4').querySelector('.text').innerText = qData.d;
+
+        // Xóa class style cũ
+        [1, 2, 3, 4].forEach(i => {
+            const opt = document.getElementById(`opt${i}`);
+            opt.className = "option";
+        });
+    }
+
+    function processAnswer(selectedNum) {
+        if (isTransitioning) return;
+        isTransitioning = true; // Khóa nhận diện
+
+        const qData = quizList[currentQIndex];
+        const selectedEl = document.getElementById(`opt${selectedNum}`);
+        const correctEl = document.getElementById(`opt${qData.ans}`);
+
+        if (selectedNum === qData.ans) {
+            selectedEl.classList.add('correct');
+            document.getElementById('statusText').innerText = "🎉 CHÍNH XÁC!";
+            document.getElementById('statusText').style.color = "var(--success)";
+            score++;
+            document.getElementById('displayScore').innerText = score;
+        } else {
+            selectedEl.classList.add('wrong');
+            correctEl.classList.add('correct');
+            document.getElementById('statusText').innerText = "❌ SAI RỒI!";
+            document.getElementById('statusText').style.color = "var(--danger)";
+        }
+
+        // Chuyển câu sau 2.5s
+        setTimeout(() => {
+            currentQIndex++;
+            if (currentQIndex < quizList.length) {
+                loadQuestion();
+            } else {
+                endQuiz();
+            }
+        }, 2500);
+    }
+
+    function endQuiz() {
+        clearInterval(timerInterval);
+        // Lưu vào LocalStorage
+        saveToLeaderboard(currentPlayer, score, timeElapsed);
+        showLeaderboard();
+        switchScreen('quizScreen', 'leaderboardScreen');
+    }
+
+    // --- 5. BẢNG XẾP HẠNG (LEADERBOARD) ---
+    function saveToLeaderboard(name, finalScore, time) {
+        let board = JSON.parse(localStorage.getItem('quizLeaderboard')) || [];
+        board.push({ name: name, score: finalScore, time: time, date: new Date().toLocaleDateString() });
+        // Sắp xếp: Điểm cao nhất -> Thời gian nhanh nhất
+        board.sort((a, b) => b.score - a.score || a.time - b.time);
+        localStorage.setItem('quizLeaderboard', JSON.stringify(board));
+    }
+
+    function showLeaderboard() {
+        if(document.getElementById('loginScreen').classList.contains('active')){
+            switchScreen('loginScreen', 'leaderboardScreen');
+        }
+        const tbody = document.querySelector('#leaderboardTable tbody');
+        tbody.innerHTML = '';
+        let board = JSON.parse(localStorage.getItem('quizLeaderboard')) || [];
+        
+        if (board.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Chưa có dữ liệu. Hãy là người đầu tiên!</td></tr>';
+            return;
+        }
+
+        board.forEach((p, index) => {
+            let rankClass = index === 0 ? 'rank-1' : (index === 1 ? 'rank-2' : (index === 2 ? 'rank-3' : ''));
+            let rankIcon = index === 0 ? '🥇' : (index === 1 ? '🥈' : (index === 2 ? '🥉' : index + 1));
+            
+            let m = String(Math.floor(p.time / 60)).padStart(2, '0');
+            let s = String(p.time % 60).padStart(2, '0');
+            
+            tbody.innerHTML += `
+                <tr>
+                    <td class="${rankClass}">${rankIcon}</td>
+                    <td><b>${p.name}</b> <span style="font-size:12px; color:#999;">(${p.date})</span></td>
+                    <td><b>${p.score}/${quizList.length}</b></td>
+                    <td>${m}:${s}</td>
+                </tr>
+            `;
+        });
+    }
+
+    function backToLogin() {
+        document.getElementById('studentName').value = '';
+        switchScreen('leaderboardScreen', 'loginScreen');
+    }
+
+    function clearLeaderboard() {
+        if(confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử điểm số?")) {
+            localStorage.removeItem('quizLeaderboard');
+            showLeaderboard();
+        }
+    }
+
+    // --- 6. AI CAMERA & GESTURE RECOGNITION ---
+    function countFingers(landmarks) {
+        let count = 0;
+        // Kiểm tra đầu ngón tay < khớp ngón tay (y hướng xuống dưới nên nhỏ hơn là cao hơn)
+        if (landmarks[8].y < landmarks[6].y) count++;  // Trỏ
+        if (landmarks[12].y < landmarks[10].y) count++; // Giữa
+        if (landmarks[16].y < landmarks[14].y) count++; // Áp út
+        if (landmarks[20].y < landmarks[18].y) count++; // Út
+        return count;
+    }
+
+    function updateAISelection(count) {
+        if (isTransitioning) return;
+
+        [1, 2, 3, 4].forEach(i => document.getElementById(`opt${i}`).classList.remove('active'));
+
+        if (count >= 1 && count <= 4) {
+            document.getElementById(`opt${count}`).classList.add('active');
+            document.getElementById('statusText').innerText = `Đang chọn đáp án ${String.fromCharCode(64 + count)}... Giữ yên!`;
+            
+            confirmTimer++;
+            document.getElementById('progressBar').style.width = (confirmTimer / CONFIRM_THRESHOLD) * 100 + "%";
+
+            if (confirmTimer >= CONFIRM_THRESHOLD) {
+                document.getElementById('progressBar').style.width = "100%";
+                processAnswer(count);
+            }
+        } else {
+            confirmTimer = 0;
+            document.getElementById('progressBar').style.width = "0%";
+            document.getElementById('statusText').innerText = "Giơ ngón tay để chọn đáp án";
+        }
+    }
+
+    function initCamera() {
+        const videoElement = document.getElementById('video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults((results) => {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#ffffff', lineWidth: 2});
+                drawLandmarks(canvasCtx, landmarks, {color: '#4361ee', lineWidth: 1, radius: 3});
+
+                if (!isTransitioning) {
+                    let fingers = countFingers(landmarks);
+                    if (fingers !== currentFingerCount) {
+                        currentFingerCount = fingers;
+                        confirmTimer = 0; 
+                    }
+                    updateAISelection(fingers);
+                }
+            } else {
+                if(!isTransitioning) updateAISelection(0);
+            }
+            canvasCtx.restore();
+        });
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 400, height: 300
+        });
+        
+        camera.start().then(() => {
+            cameraStarted = true;
+            document.getElementById('statusText').innerText = "Camera sẵn sàng!";
+        }).catch(err => {
+            alert("Lỗi truy cập Camera. Vui lòng cấp quyền cho trình duyệt.");
+        });
+    }
+</script>
+</body>
+</html>

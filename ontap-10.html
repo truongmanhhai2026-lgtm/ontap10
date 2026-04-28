@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Trắc Nghiệm AI Mobile</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --primary: #4361ee;
+            --success: #2ecc71;
+            --danger: #e74c3c;
+            --warning: #f1c40f;
+            --bg: #f8f9fa;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: #333; overflow-x: hidden; }
+        
+        .container { max-width: 1200px; margin: 0 auto; padding: 15px; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+        .screen { display: none; background: white; padding: 30px 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 800px; margin: 0 auto; }
+        .screen.active { display: block; animation: fadeIn 0.5s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Login Screen */
+        .login-box { text-align: center; }
+        .login-box h1 { margin-bottom: 15px; color: var(--primary); font-size: 24px; }
+        .login-box input { width: 100%; max-width: 300px; padding: 15px; margin: 10px 0; border: 2px solid #ddd; border-radius: 10px; font-size: 16px; outline: none; }
+        .btn { padding: 15px 30px; font-size: 16px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; background: var(--primary); color: white; margin-top: 10px; width: 100%; max-width: 300px; }
+        
+        /* Quiz Layout */
+        .quiz-layout { display: flex; gap: 20px; max-width: 1200px; margin: 0 auto; align-items: flex-start; }
+        .quiz-content { flex: 2; background: white; padding: 20px; border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); width: 100%; }
+        .camera-content { flex: 1; background: white; padding: 15px; border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); text-align: center; width: 100%; }
+        
+        .header-info { display: flex; justify-content: space-between; flex-wrap: wrap; margin-bottom: 15px; font-size: 16px; font-weight: bold; color: var(--primary); border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .question-text { font-size: 18px; margin-bottom: 20px; line-height: 1.4; font-weight: 600; }
+        
+        .options { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .option { padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 12px; font-size: 16px; display: flex; align-items: center; background: white; transition: 0.2s; }
+        .option .badge { min-width: 30px; height: 30px; background: var(--primary); color: white; display: flex; justify-content: center; align-items: center; border-radius: 50%; margin-right: 15px; font-weight: bold; font-size: 14px; }
+        .option.active { border-color: var(--warning); background-color: #fffdf0; }
+        .option.correct { border-color: var(--success); background-color: #ebfaf1; }
+        .option.wrong { border-color: var(--danger); background-color: #fceceb; }
+
+        .camera-wrapper { position: relative; width: 100%; max-width: 400px; margin: 0 auto 10px; aspect-ratio: 4/3; }
+        canvas { width: 100%; height: 100%; border-radius: 12px; background: #000; transform: scaleX(-1); border: 2px solid #eee; object-fit: cover; }
+        video { display: none; }
+        
+        #statusText { font-weight: bold; font-size: 16px; min-height: 24px; color: var(--primary); margin: 10px 0; }
+        .progress-bar-container { width: 100%; height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+        #progressBar { width: 0%; height: 100%; background: var(--warning); transition: width 0.1s linear; }
+
+        /* Leaderboard */
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+        th, td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: var(--primary); color: white; }
+
+        /* NÂNG CẤP: GIAO DIỆN MOBILE */
+        @media (max-width: 768px) {
+            .container { padding: 10px; justify-content: flex-start; }
+            .quiz-layout { flex-direction: column; }
+            
+            /* Đưa camera lên trên cùng trên điện thoại */
+            .camera-content { order: -1; padding: 10px; }
+            .quiz-content { padding: 15px; }
+            
+            .header-info { flex-direction: column; text-align: center; gap: 5px; font-size: 14px; }
+            .question-text { font-size: 16px; }
+            .option { font-size: 14px; padding: 10px; }
+            
+            h1 { font-size: 20px !important; }
+            .login-box p { font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="loginScreen" class="screen active login-box">
+        <h1>👋 Phòng thi AI</h1>
+        <p style="margin-bottom: 20px; color: #666;">Nhận diện đáp án bằng cử chỉ tay qua Camera</p>
+        <input type="text" id="studentName" placeholder="Nhập tên của bạn" autocomplete="off">
+        <br>
+        <button class="btn" onclick="startQuiz()">Bắt đầu thi</button>
+        <button class="btn" style="background: #6c757d; margin-top: 10px;" onclick="showLeaderboard()">Bảng xếp hạng</button>
+    </div>
+
+    <div id="quizScreen" class="quiz-layout" style="display: none;">
+        <div class="quiz-content">
+            <div class="header-info">
+                <div>Thí sinh: <span id="displayPlayer"></span></div>
+                <div>Điểm: <span id="displayScore">0</span>/<span id="totalQuestions"></span></div>
+                <div>Thời gian: <span id="displayTime">00:00</span></div>
+            </div>
+            <div class="question-text" id="questionText">Đang tải câu hỏi...</div>
+            <div class="options">
+                <div class="option" id="opt1"><div class="badge">A</div><span class="text"></span></div>
+                <div class="option" id="opt2"><div class="badge">B</div><span class="text"></span></div>
+                <div class="option" id="opt3"><div class="badge">C</div><span class="text"></span></div>
+                <div class="option" id="opt4"><div class="badge">D</div><span class="text"></span></div>
+            </div>
+        </div>
+
+        <div class="camera-content">
+            <div class="camera-wrapper">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="output_canvas"></canvas>
+            </div>
+            <div id="statusText">Đang khởi động Camera...</div>
+            <div class="progress-bar-container">
+                <div id="progressBar"></div>
+            </div>
+            <div style="font-size: 13px; color: #666; background: #f8f9fa; padding: 10px; border-radius: 8px; text-align: left;">
+                <strong>Hướng dẫn:</strong> Giơ 1 ngón (A) | 2 ngón (B) | 3 ngón (C) | 4 ngón (D). Giữ yên 2 giây để chốt.
+            </div>
+        </div>
+    </div>
+
+    <div id="leaderboardScreen" class="screen login-box">
+        <h1>🏆 Bảng Xếp Hạng</h1>
+        <div style="overflow-x: auto;">
+            <table id="leaderboardTable">
+                <thead>
+                    <tr>
+                        <th>Hạng</th>
+                        <th>Tên</th>
+                        <th>Điểm</th>
+                        <th>TG</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <button class="btn" onclick="backToLogin()">Về trang chủ</button>
+        <button class="btn" style="background: #e74c3c;" onclick="clearLeaderboard()">Xóa dữ liệu</button>
+    </div>
+</div>
+
+<script>
+    const quizList = [
+        { q: "Câu 1. Khi khai báo hàm, thành phần nào được định nghĩa và được dùng như biến trong hàm?", a: "Tham số.", b: "Đối số.", c: "Dữ liệu.", d: "Giá trị.", ans: 1 },
+        { q: "Câu 2. Hàm trong Python được định nghĩa bằng từ khóa nào?", a: "return.", b: "function.", c: "def.", d: "global", ans: 3 },
+        { q: "Câu 3. Giá trị được truyền vào khi gọi hàm được gọi là:", a: "Tham số.", b: "Dữ liệu.", c: "Giá trị.", d: "Đối số.", ans: 4 },
+        { q: "Câu 4. Số lượng giá trị được truyền vào hàm và số tham số trong khai báo của hàm có mối liên hệ với nhau như thế nào:", a: "Số tham số phải nhiều hơn", b: "Số tham số phải ít hơn", c: "Bằng nhau", d: "Không phụ thuộc nhau", ans: 3 },
+        { q: "Câu 5. Khi gọi hàm f(1, 2, 3), khi định nghĩa hàm f có bao nhiêu tham số?", a: "1.", b: "2.", c: "3.", d: "4.", ans: 3 },
+        { q: "Câu 6. Khi gọi hàm f(1, 2), khi định nghĩa hàm f có bao nhiêu tham số?", a: "1.", b: "2.", c: "3.", d: "4.", ans: 2 },
+        { q: "Câu 7. Hàm f được khai báo như sau f(a, b, c). Số lượng đối số truyền vào là:", a: "3.", b: "2.", c: "1.", d: "4.", ans: 1 },
+        { q: "Câu 8. Hàm f được khai báo như sau s(a, b). Số lượng đối số truyền vào là:", a: "3.", b: "2.", c: "1.", d: "4.", ans: 2 },
+        { q: "Câu 9. Chương trình sau có lỗi ở dòng nào?\n1 m,n=10,5\n2 def f(a)\n3 k=m+n+a\n4 return k\n5 print(f(5))", a: "dòng 2", b: "dòng 3", c: "dòng 4", d: "dòng 5", ans: 1 },
+        { q: "Câu 10. Trong Python biến được khai báo và sử dụng bên trong một hàm được gọi là biến gì?", a: "Biến cơ bản", b: "Biến toàn cục", c: "Biến riêng", d: "Biến cục bộ", ans: 4 },
+        { q: "Câu 11. Nếu muốn biến bên ngoài vẫn có tác dụng bên trong hàm thì cần khai báo lại biến này bên trong hàm với từ khoá nào", a: "global.", b: "def.", c: "Không thể thực hiện", d: "all.", ans: 1 },
+        { q: "Câu 12. Có thể phân biệt lỗi chương trình Python làm mấy loại?", a: "1.", b: "2.", c: "3.", d: "4.", ans: 2 },
+        { q: "Câu 13. Khi có lệnh viết sai cú pháp hoặc sai cấu trúc ngôn ngữ Python quy định, chương trình đưa ra lỗi:", a: "ZeroDivisionError.", b: "TypeError.", c: "IndentationError.", d: "SyntaxError.", ans: 4 },
+        { q: "Câu 14. Mã lỗi nào được đưa ra khi lệnh gọi một hàm nhưng không có hàm đó", a: "ZeroDivisionError.", b: "TypeError.", c: "IndentationError.", d: "NameError.", ans: 4 },
+        { q: "Câu 15. Mã lỗi nào được đưa ra khi lệnh thực hiện phép chia cho giá trị 0", a: "ZeroDivisionError.", b: "TypeError.", c: "IndentationError.", d: "SyntaxError.", ans: 1 },
+        { q: "Câu 16. Khi dòng lệnh thụt vào không thẳng hàng chương trình đưa ra mã lỗi ngoại lệ nào?", a: "ZeroDivisionError.", b: "TypeError.", c: "IndentationError.", d: "SyntaxError.", ans: 3 },
+        { q: "Câu 17. Chương trình chạy phát sinh lỗi ngoại lệ ZeroDivision, nên xử lí như thế nào?", a: "Kiểm tra lại giá trị số chia.", b: "Kiểm tra lại chỉ số trong mảng.", c: "Kiểm tra giá trị của số bị chia.", d: "Kiểm tra kiểu dữ liệu nhập vào.", ans: 1 },
+        { q: "Câu 18. Chương trình chạy phát sinh lỗi ngoại lệ TypeError, nên xử lí như thế nào?", a: "Kiểm tra lại chỉ số trong mảng.", b: "Kiểm tra lại giá trị số chia.", c: "Kiểm tra giá trị của số bị chia.", d: "Kiểm tra kiểu dữ liệu nhập vào.", ans: 4 },
+        { q: "Câu 19. Công việc nào có liên quan trực tiếp đến nghề thiết kế đồ họa?", a: "Thợ may.", b: "Giáo viên", c: "Kiến trúc sư.", d: "Bác sĩ.", ans: 3 },
+        { q: "Câu 20. Đâu không là phần mềm mà người thiết kế đồ hoạ sử dụng?", a: "Word.", b: "Inkscape.", c: "Adobe Photoshop.", d: "Paint.", ans: 1 },
+        { q: "Câu 21. Ngành thiết kế đồ họa cần có kĩ năng gì?", a: "Vẽ, sắp xếp đối tượng.", b: "Sử dụng máy tính.", c: "Làm việc trên phần mềm đồ họa.", d: "Cả 3 phương án trên.", ans: 4 },
+        { q: "Câu 22. Kĩ năng, tố chất nào cần thiết nhất cho người thiết kế đồ họa?", a: "Hiểu biết toán học.", b: "Thành thạo phần mềm & công nghệ.", c: "Biết chơi nhạc cụ.", d: "Có khả năng nhìn nhận cái đẹp.", ans: 4 },
+        { q: "Câu 23. Tiếp xúc khách hàng, xây dựng hồ sơ yêu cầu là công đoạn nào?", a: "Lập trình.", b: "Kiểm thử.", c: "Chuyển giao.", d: "Điều tra khảo sát.", ans: 4 },
+        { q: "Câu 24. Cài đặt, khởi tạo dữ liệu, hướng dẫn sử dụng là công đoạn nào?", a: "Lập trình.", b: "Điều tra khảo sát.", c: "Kiểm thử.", d: "Chuyển giao.", ans: 4 },
+        { q: "Câu 25. Tố chất cần thiết đối với lập trình viên là?", a: "Hiểu thuật toán.", b: "Kiến thức KHMT.", c: "Cẩn thận, tỉ mỉ.", d: "Cả 3 ý trên.", ans: 4 },
+        { q: "Câu 26. Công việc của kĩ sư phần mềm gồm có:", a: "Phân tích, thiết kế.", b: "Kiểm định, bảo trì.", c: "Định hướng phát triển.", d: "Tất cả những điều trên.", ans: 4 },
+        { q: "Câu 27. Lệnh nào sau đây xoá toàn bộ danh sách?", a: "clear().", b: "exit().", c: "remove().", d: "del().", ans: 1 },
+        { q: "Câu 28. Phát biểu nào sau đây là sai?", a: "clear() làm rỗng danh sách.", b: "remove() xoá 1 phần tử cho trước.", c: "remove() xoá tất cả phần tử cho trước.", d: "clear() xoá toàn bộ danh sách.", ans: 3 },
+        { q: "Câu 29. Số phát biểu đúng là: (A) clear() trả về 0. (B) remove trả False nếu không có. (C) remove() xoá 1 phần tử cho trước. (D) remove() xoá ở vị trí cho trước.", a: "1.", b: "2.", c: "0.", d: "3.", ans: 1 },
+        { q: "Câu 30. Trong Python, câu lệnh nào dùng để tính độ dài của xâu s?", a: "len(s).", b: "length(s).", c: "s.len().", d: "s. length().", ans: 1 }
+    ];
+
+    document.getElementById('totalQuestions').innerText = quiz
